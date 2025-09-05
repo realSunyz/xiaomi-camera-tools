@@ -1,0 +1,10 @@
+.git
+.gitignore
+**/.DS_Store
+xiaomi-video
+bin/
+obj/
+dist/
+build/
+node_modules/
+*.log
