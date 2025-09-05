@@ -79,10 +79,9 @@ type Config struct {
 
 func main() {
 	cfg := parseFlags()
-
-	if cfg.Verbose {
-		log.Printf("dir=%s outDir=%s outExt=%s merge=%v cleanup=%v days=%d overwrite=%v dryRun=%v genpts=%v", cfg.Dir, cfg.OutDir, cfg.OutExt, cfg.DoMerge, cfg.DoCleanup, cfg.Days, cfg.Overwrite, cfg.DryRun, cfg.GenPTS)
-	}
+	log.SetOutput(os.Stdout)
+	log.Printf("xiaomi-video starting: dir=%s outDir=%s outExt=%s merge=%v cleanup=%v days=%d overwrite=%v dryRun=%v genpts=%v deleteSegments=%v skipToday=%v",
+		cfg.Dir, cfg.OutDir, cfg.OutExt, cfg.DoMerge, cfg.DoCleanup, cfg.Days, cfg.Overwrite, cfg.DryRun, cfg.GenPTS, cfg.DeleteSegs, cfg.SkipToday)
 
 	if cfg.DoMerge {
 		if err := ensureFFmpeg(); err != nil {
@@ -435,13 +434,8 @@ func runFFmpeg(args []string, verbose bool) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	if verbose {
-		go io.Copy(os.Stdout, stdout)
-		go io.Copy(os.Stderr, stderr)
-	} else {
-		go io.Copy(io.Discard, stdout)
-		go io.Copy(io.Discard, stderr)
-	}
+	go io.Copy(os.Stdout, stdout)
+	go io.Copy(os.Stderr, stderr)
 	return cmd.Wait()
 }
 
@@ -525,13 +519,8 @@ func runFFmpegConcat(listFile, outPath string, genpts, verbose bool) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	if verbose {
-		go io.Copy(os.Stdout, stdout)
-		go io.Copy(os.Stderr, stderr)
-	} else {
-		go io.Copy(io.Discard, stdout)
-		go io.Copy(io.Discard, stderr)
-	}
+	go io.Copy(os.Stdout, stdout)
+	go io.Copy(os.Stderr, stderr)
 	if err := cmd.Wait(); err != nil {
 		return err
 	}
