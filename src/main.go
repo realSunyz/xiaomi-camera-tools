@@ -74,6 +74,7 @@ type Config struct {
 	Verbose    bool
 	GenPTS     bool
 	DeleteSegs bool
+	SkipToday  bool
 }
 
 func main() {
@@ -111,6 +112,7 @@ const (
 	envVerbose    = "XIAOMI_VIDEO_VERBOSE"
 	envGenPTS     = "XIAOMI_VIDEO_GENPTS"
 	envDeleteSegs = "XIAOMI_VIDEO_DELETE_SEGMENTS"
+	envSkipToday  = "XIAOMI_VIDEO_SKIP_TODAY"
 )
 
 func envString(key, def string) string {
@@ -154,6 +156,7 @@ func parseFlags() Config {
 	defVerbose := envBool(envVerbose, false)
 	defGenPTS := envBool(envGenPTS, false)
 	defDelete := envBool(envDeleteSegs, true)
+	defSkipToday := envBool(envSkipToday, true)
 
 	var cfg Config
 	flag.StringVar(&cfg.Dir, "dir", defDir, "Input directory to scan")
@@ -167,6 +170,7 @@ func parseFlags() Config {
 	flag.BoolVar(&cfg.Verbose, "v", defVerbose, "Verbose logging")
 	flag.BoolVar(&cfg.GenPTS, "genpts", defGenPTS, "Use -fflags +genpts with ffmpeg concat (may help PTS issues)")
 	flag.BoolVar(&cfg.DeleteSegs, "delete-segments", defDelete, "Delete original segments after successful merge")
+	flag.BoolVar(&cfg.SkipToday, "skip-today", defSkipToday, "Skip processing content that belongs to today (default true)")
 	flag.Parse()
 
 	if cfg.OutDir == "" {
@@ -235,7 +239,26 @@ func mergeByDay(cfg Config) error {
 		return nil
 	}
 
-	segsPre, tempCleanup, err := splitCrossDaySegments(segs, cfg)
+	segsEligible := segs
+	if cfg.SkipToday {
+		now := time.Now()
+		todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+		tmp := make([]Segment, 0, len(segs))
+		for _, s := range segs {
+			if s.EndTime.Before(todayStart) {
+				tmp = append(tmp, s)
+			}
+		}
+		if cfg.Verbose {
+			log.Printf("skip-today: %d/%d segments eligible (end < %s)", len(tmp), len(segs), todayStart.Format(time.RFC3339))
+		}
+		segsEligible = tmp
+		if len(segsEligible) == 0 {
+			return nil
+		}
+	}
+
+	segsPre, tempCleanup, err := splitCrossDaySegments(segsEligible, cfg)
 	if err != nil {
 		return err
 	}
@@ -305,7 +328,7 @@ func mergeByDay(cfg Config) error {
 	}
 
 	if cfg.DeleteSegs {
-		if err := deleteFiles(segs, cfg); err != nil {
+		if err := deleteFiles(segsEligible, cfg); err != nil {
 			return err
 		}
 	}
