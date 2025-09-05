@@ -21,7 +21,10 @@ ENV TZ=Asia/Shanghai \
     XIAOMI_VIDEO_DRY_RUN=false \
     XIAOMI_VIDEO_VERBOSE=true \
     XIAOMI_VIDEO_GENPTS=false \
-    XIAOMI_VIDEO_DELETE_SEGMENTS=true
+    XIAOMI_VIDEO_DELETE_SEGMENTS=true \
+    XIAOMI_VIDEO_DAEMON=true \
+    XIAOMI_VIDEO_DAILY_AT=10:00 \
+    XIAOMI_VIDEO_CRON="0 10 * * *"
 
 WORKDIR /work
 RUN mkdir -p /data/input /data/output

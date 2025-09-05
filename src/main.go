@@ -75,28 +75,254 @@ type Config struct {
 	GenPTS     bool
 	DeleteSegs bool
 	SkipToday  bool
+	Daemon     bool
+	DailyAt    string
+	Cron       string
+}
+
+var gVerbose bool
+
+func logInfo(format string, args ...any)  { log.Printf("[INFO] "+format, args...) }
+func logWarn(format string, args ...any)  { log.Printf("[WARN] "+format, args...) }
+func logError(format string, args ...any) { log.Printf("[ERROR] "+format, args...) }
+func logDebug(format string, args ...any) {
+	if gVerbose {
+		log.Printf("[DEBUG] "+format, args...)
+	}
 }
 
 func main() {
 	cfg := parseFlags()
 	log.SetOutput(os.Stdout)
-	log.Printf("xiaomi-video starting: dir=%s outDir=%s outExt=%s merge=%v cleanup=%v days=%d overwrite=%v dryRun=%v genpts=%v deleteSegments=%v skipToday=%v",
-		cfg.Dir, cfg.OutDir, cfg.OutExt, cfg.DoMerge, cfg.DoCleanup, cfg.Days, cfg.Overwrite, cfg.DryRun, cfg.GenPTS, cfg.DeleteSegs, cfg.SkipToday)
+	gVerbose = cfg.Verbose
+	logInfo("xiaomi-video starting: dir=%s outDir=%s outExt=%s merge=%v cleanup=%v days=%d overwrite=%v dryRun=%v genpts=%v deleteSegments=%v skipToday=%v daemon=%v dailyAt=%s cron='%s'",
+		cfg.Dir, cfg.OutDir, cfg.OutExt, cfg.DoMerge, cfg.DoCleanup, cfg.Days, cfg.Overwrite, cfg.DryRun, cfg.GenPTS, cfg.DeleteSegs, cfg.SkipToday, cfg.Daemon, cfg.DailyAt, cfg.Cron)
 
+	if cfg.Daemon {
+		if strings.TrimSpace(cfg.Cron) != "" {
+			logInfo("Daemon mode using CRON='%s' (TZ=%s)", cfg.Cron, os.Getenv("TZ"))
+			for {
+				next, err := nextCronTime(cfg.Cron, time.Now())
+				if err != nil {
+					logError("Invalid --cron '%s': %v; fallback to 60s later", cfg.Cron, err)
+					next = time.Now().Add(60 * time.Second)
+				}
+				wait := time.Until(next)
+				if wait < 0 {
+					wait = 0
+				}
+				logInfo("Next run at %s (in %s)", next.Format(time.RFC3339), wait.Truncate(time.Second))
+				time.Sleep(wait)
+				if err := runOnce(cfg); err != nil {
+					logError("Run failed: %v", err)
+				}
+			}
+		} else {
+			logInfo("Daemon mode enabled; schedule daily at %s (TZ=%s)", cfg.DailyAt, os.Getenv("TZ"))
+			for {
+				next, err := nextRunTime(cfg.DailyAt)
+				if err != nil {
+					logError("Invalid --daily-at '%s': %v; fallback to 24h later", cfg.DailyAt, err)
+					next = time.Now().Add(24 * time.Hour)
+				}
+				wait := time.Until(next)
+				if wait < 0 {
+					wait = 0
+				}
+				logInfo("Next run at %s (in %s)", next.Format(time.RFC3339), wait.Truncate(time.Second))
+				time.Sleep(wait)
+				if err := runOnce(cfg); err != nil {
+					logError("Run failed: %v", err)
+				}
+			}
+		}
+	} else {
+		if err := runOnce(cfg); err != nil {
+			log.Fatalf("[FATAL] run failed: %v", err)
+		}
+	}
+}
+
+func runOnce(cfg Config) error {
+	start := time.Now()
+	logInfo("Run started at %s", start.Format(time.RFC3339))
 	if cfg.DoMerge {
 		if err := ensureFFmpeg(); err != nil {
-			log.Fatalf("ffmpeg not found: %v", err)
+			return fmt.Errorf("ffmpeg not found: %w", err)
 		}
 		if err := mergeByDay(cfg); err != nil {
-			log.Fatalf("merge failed: %v", err)
+			return err
 		}
 	}
-
 	if cfg.DoCleanup {
 		if err := cleanupOld(cfg); err != nil {
-			log.Fatalf("cleanup failed: %v", err)
+			return err
 		}
 	}
+	logInfo("Run finished in %s", time.Since(start).Truncate(time.Second))
+	return nil
+}
+
+func nextRunTime(hhmm string) (time.Time, error) {
+	parts := strings.Split(hhmm, ":")
+	if len(parts) != 2 {
+		return time.Time{}, fmt.Errorf("invalid HH:MM: %s", hhmm)
+	}
+	h, err := strconv.Atoi(parts[0])
+	if err != nil || h < 0 || h > 23 {
+		return time.Time{}, fmt.Errorf("invalid hour: %s", parts[0])
+	}
+	m, err := strconv.Atoi(parts[1])
+	if err != nil || m < 0 || m > 59 {
+		return time.Time{}, fmt.Errorf("invalid minute: %s", parts[1])
+	}
+	now := time.Now()
+	candidate := time.Date(now.Year(), now.Month(), now.Day(), h, m, 0, 0, time.Local)
+	if candidate.After(now) {
+		return candidate, nil
+	}
+	n := now.Add(24 * time.Hour)
+	return time.Date(n.Year(), n.Month(), n.Day(), h, m, 0, 0, time.Local), nil
+}
+
+func nextCronTime(spec string, now time.Time) (time.Time, error) {
+	fields := strings.Fields(spec)
+	if len(fields) != 5 {
+		return time.Time{}, fmt.Errorf("cron requires 5 fields (M H DOM MON DOW): %s", spec)
+	}
+	mins, err := parseCronField(fields[0], 0, 59)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("minute: %w", err)
+	}
+	hours, err := parseCronField(fields[1], 0, 23)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("hour: %w", err)
+	}
+	dom, domWild, err := parseCronFieldWild(fields[2], 1, 31)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("dom: %w", err)
+	}
+	mon, err := parseCronField(fields[3], 1, 12)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("mon: %w", err)
+	}
+	dow, dowWild, err := parseCronFieldWild(fields[4], 0, 6)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("dow: %w", err)
+	}
+
+	t := now.Add(time.Minute).Truncate(time.Minute)
+	limit := t.AddDate(1, 1, 0)
+	for t.Before(limit) {
+		if !mins[t.Minute()] {
+			t = t.Add(time.Minute - time.Duration(t.Second())*time.Second)
+			continue
+		}
+		if !hours[t.Hour()] {
+			t = t.Add(time.Hour).Truncate(time.Hour)
+			continue
+		}
+		if !mon[int(t.Month())] {
+			t = t.AddDate(0, 1, 0).Add(-time.Duration(t.Hour()) * time.Hour).Add(-time.Duration(t.Minute()) * time.Minute).Truncate(time.Hour)
+			continue
+		}
+		d_match := dom[t.Day()]
+		wd := int(t.Weekday())
+		if wd == 7 {
+			wd = 0
+		}
+		w_match := dow[wd]
+		ok := false
+		if domWild && dowWild {
+			ok = true
+		} else if domWild {
+			ok = w_match
+		} else if dowWild {
+			ok = d_match
+		} else {
+			ok = d_match || w_match
+		}
+		if ok {
+			return t, nil
+		}
+		t = t.Add(time.Minute)
+	}
+	return time.Time{}, fmt.Errorf("no matching time within search window for cron '%s'", spec)
+}
+
+func parseCronFieldWild(expr string, min, max int) (map[int]bool, bool, error) {
+	if strings.TrimSpace(expr) == "*" {
+		m := make(map[int]bool, max-min+1)
+		for v := min; v <= max; v++ {
+			m[v] = true
+		}
+		return m, true, nil
+	}
+	m, err := parseCronField(expr, min, max)
+	return m, false, err
+}
+
+func parseCronField(expr string, min, max int) (map[int]bool, error) {
+	m := make(map[int]bool, max-min+1)
+	add := func(v int) error {
+		if v < min || v > max {
+			return fmt.Errorf("value %d out of range [%d,%d]", v, min, max)
+		}
+		m[v] = true
+		return nil
+	}
+	parts := strings.Split(expr, ",")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "*" {
+			for v := min; v <= max; v++ {
+				m[v] = true
+			}
+			continue
+		}
+		step := 1
+		base := p
+		if strings.Contains(p, "/") {
+			ss := strings.SplitN(p, "/", 2)
+			base = ss[0]
+			s, err := strconv.Atoi(ss[1])
+			if err != nil || s <= 0 {
+				return nil, fmt.Errorf("invalid step '%s'", ss[1])
+			}
+			step = s
+		}
+		if strings.Contains(base, "-") {
+			rr := strings.SplitN(base, "-", 2)
+			lo, err1 := strconv.Atoi(rr[0])
+			hi, err2 := strconv.Atoi(rr[1])
+			if err1 != nil || err2 != nil || lo > hi {
+				return nil, fmt.Errorf("invalid range '%s'", base)
+			}
+			for v := lo; v <= hi; v += step {
+				if err := add(v); err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+		if base == "" {
+			for v := min; v <= max; v += step {
+				m[v] = true
+			}
+			continue
+		}
+		iv, err := strconv.Atoi(base)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value '%s'", base)
+		}
+		if err := add(iv); err != nil {
+			return nil, err
+		}
+	}
+	if len(m) == 0 {
+		return nil, fmt.Errorf("empty field after parsing: %s", expr)
+	}
+	return m, nil
 }
 
 const (
@@ -112,6 +338,9 @@ const (
 	envGenPTS     = "XIAOMI_VIDEO_GENPTS"
 	envDeleteSegs = "XIAOMI_VIDEO_DELETE_SEGMENTS"
 	envSkipToday  = "XIAOMI_VIDEO_SKIP_TODAY"
+	envDaemon     = "XIAOMI_VIDEO_DAEMON"
+	envDailyAt    = "XIAOMI_VIDEO_DAILY_AT"
+	envCron       = "XIAOMI_VIDEO_CRON"
 )
 
 func envString(key, def string) string {
@@ -156,6 +385,9 @@ func parseFlags() Config {
 	defGenPTS := envBool(envGenPTS, false)
 	defDelete := envBool(envDeleteSegs, true)
 	defSkipToday := envBool(envSkipToday, true)
+	defDaemon := envBool(envDaemon, false)
+	defDailyAt := envString(envDailyAt, "10:00")
+	defCron := envString(envCron, "0 10 * * *")
 
 	var cfg Config
 	flag.StringVar(&cfg.Dir, "dir", defDir, "Input directory to scan")
@@ -170,6 +402,9 @@ func parseFlags() Config {
 	flag.BoolVar(&cfg.GenPTS, "genpts", defGenPTS, "Use -fflags +genpts with ffmpeg concat (may help PTS issues)")
 	flag.BoolVar(&cfg.DeleteSegs, "delete-segments", defDelete, "Delete original segments after successful merge")
 	flag.BoolVar(&cfg.SkipToday, "skip-today", defSkipToday, "Skip processing content that belongs to today (default true)")
+	flag.BoolVar(&cfg.Daemon, "daemon", defDaemon, "Run as a daily scheduler (do not exit)")
+	flag.StringVar(&cfg.DailyAt, "daily-at", defDailyAt, "Daily time to run in HH:MM (local time). Deprecated if --cron is set")
+	flag.StringVar(&cfg.Cron, "cron", defCron, "Cron schedule (5 fields: M H DOM MON DOW). Overrides --daily-at if set")
 	flag.Parse()
 
 	if cfg.OutDir == "" {
@@ -186,7 +421,7 @@ func ensureFFmpeg() error {
 	return err
 }
 
-func collectSegments(root string, verbose bool) ([]Segment, error) {
+func collectSegments(root string) ([]Segment, error) {
 	segments := make([]Segment, 0, 1024)
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -203,9 +438,7 @@ func collectSegments(root string, verbose bool) ([]Segment, error) {
 		segments = append(segments, Segment{Path: path, StartTime: s, EndTime: e, Ext: ext})
 		return nil
 	})
-	if verbose {
-		log.Printf("found %d segments", len(segments))
-	}
+	logInfo("Found %d segments in %s", len(segments), root)
 	return segments, err
 }
 
@@ -227,14 +460,12 @@ func groupByDay(segs []Segment) map[string]*DayGroup {
 }
 
 func mergeByDay(cfg Config) error {
-	segs, err := collectSegments(cfg.Dir, cfg.Verbose)
+	segs, err := collectSegments(cfg.Dir)
 	if err != nil {
 		return err
 	}
 	if len(segs) == 0 {
-		if cfg.Verbose {
-			log.Printf("no segments detected; nothing to merge")
-		}
+		logInfo("No segments detected; nothing to merge")
 		return nil
 	}
 
@@ -248,11 +479,10 @@ func mergeByDay(cfg Config) error {
 				tmp = append(tmp, s)
 			}
 		}
-		if cfg.Verbose {
-			log.Printf("skip-today: %d/%d segments eligible (end < %s)", len(tmp), len(segs), todayStart.Format(time.RFC3339))
-		}
+		logInfo("Skip-today: eligible %d/%d (end < %s)", len(tmp), len(segs), todayStart.Format(time.RFC3339))
 		segsEligible = tmp
 		if len(segsEligible) == 0 {
+			logInfo("No segments to process after skip-today filter")
 			return nil
 		}
 	}
@@ -271,6 +501,7 @@ func mergeByDay(cfg Config) error {
 	sort.Strings(days)
 
 	var mergeErr error
+	successDays := 0
 	for _, day := range days {
 		g := groups[day]
 		if len(g.Segments) == 0 {
@@ -280,9 +511,7 @@ func mergeByDay(cfg Config) error {
 		last := g.Segments[len(g.Segments)-1]
 
 		if first.StartTime.Format("20060102") != day || last.EndTime.Format("20060102") != day {
-			if cfg.Verbose {
-				log.Printf("skip merge for %s due to cross-day parts present after preprocessing", day)
-			}
+			logWarn("Skip merge for %s due to cross-day parts after preprocessing", day)
 			mergeErr = fmt.Errorf("group %s not single-day after preprocessing", day)
 			continue
 		}
@@ -291,15 +520,13 @@ func mergeByDay(cfg Config) error {
 
 		if !cfg.Overwrite {
 			if _, err := os.Stat(outPath); err == nil {
-				if cfg.Verbose {
-					log.Printf("skip day %s: output exists %s", day, outPath)
-				}
+				logInfo("Skip day %s: output exists %s", day, outPath)
 				continue
 			}
 		}
 
 		if cfg.DryRun {
-			log.Printf("[dry-run] would merge %d segments -> %s", len(g.Segments), outPath)
+			logInfo("[dry-run] Merge %d segments -> %s", len(g.Segments), outPath)
 			continue
 		}
 
@@ -313,18 +540,20 @@ func mergeByDay(cfg Config) error {
 		}
 		defer cleanup()
 
-		if cfg.Verbose {
-			log.Printf("merging %d segments for %s -> %s", len(g.Segments), day, outPath)
-		}
-		if err := runFFmpegConcat(listFile, outPath, cfg.GenPTS, cfg.Verbose); err != nil {
-			log.Printf("merge failed for %s: %v", day, err)
+		logInfo("Merging day %s: %d segments -> %s", day, len(g.Segments), outPath)
+		if err := runFFmpegConcat(listFile, outPath, cfg.GenPTS); err != nil {
+			logError("Merge failed for day %s: %v", day, err)
 			mergeErr = err
 			continue
 		}
+		logInfo("Done day %s -> %s", day, outPath)
+		successDays++
 	}
 	if mergeErr != nil {
+		logWarn("Merging finished with errors; successful days: %d", successDays)
 		return mergeErr
 	}
+	logInfo("Merging finished; successful days: %d", successDays)
 
 	if cfg.DeleteSegs {
 		if err := deleteFiles(segsEligible, cfg); err != nil {
@@ -351,9 +580,7 @@ func splitCrossDaySegments(segs []Segment, cfg Config) ([]Segment, func(), error
 
 		totalDur := int(s.EndTime.Sub(s.StartTime).Seconds())
 		if totalDur <= 0 {
-			if cfg.Verbose {
-				log.Printf("skip invalid duration segment: %s", s.Path)
-			}
+			logWarn("Skip invalid duration segment: %s", s.Path)
 			continue
 		}
 
@@ -396,6 +623,7 @@ func splitCrossDaySegments(segs []Segment, cfg Config) ([]Segment, func(), error
 			temps = append(temps, tmp)
 
 			if cfg.DryRun {
+				logInfo("[dry-run] Split %s (off=%ds dur=%ds)", s.Path, p.off, p.dur)
 				continue
 			}
 
@@ -408,10 +636,8 @@ func splitCrossDaySegments(segs []Segment, cfg Config) ([]Segment, func(), error
 				args = append(args, "-fflags", "+genpts")
 			}
 			args = append(args, "-c", "copy", tmp)
-			if cfg.Verbose {
-				log.Printf("ffmpeg trim %s -> %s (off=%ds dur=%ds)", s.Path, tmp, p.off, p.dur)
-			}
-			if err := runFFmpeg(args, cfg.Verbose); err != nil {
+			logDebug("ffmpeg trim %s -> %s (off=%ds dur=%ds)", s.Path, tmp, p.off, p.dur)
+			if err := runFFmpeg(args); err != nil {
 				cleanup()
 				return nil, func() {}, fmt.Errorf("ffmpeg split failed: %w", err)
 			}
@@ -421,7 +647,7 @@ func splitCrossDaySegments(segs []Segment, cfg Config) ([]Segment, func(), error
 	return out, cleanup, nil
 }
 
-func runFFmpeg(args []string, verbose bool) error {
+func runFFmpeg(args []string) error {
 	cmd := exec.Command("ffmpeg", args...)
 	var stdout, stderr io.ReadCloser
 	var err error
@@ -450,14 +676,13 @@ func deleteFiles(segs []Segment, cfg Config) error {
 		files = append(files, s.Path)
 	}
 	sort.Strings(files)
+	logInfo("Deleting %d original segment(s)", len(files))
 	for _, p := range files {
 		if cfg.DryRun {
-			log.Printf("[dry-run] would delete original %s", p)
+			logInfo("[dry-run] Delete original %s", p)
 			continue
 		}
-		if cfg.Verbose {
-			log.Printf("deleting original %s", p)
-		}
+		logDebug("Deleting original %s", p)
 		if err := os.Remove(p); err != nil {
 			return fmt.Errorf("delete %s: %w", p, err)
 		}
@@ -500,7 +725,7 @@ func writeConcatList(segs []Segment) (string, func(), error) {
 	return f.Name(), cleanup, nil
 }
 
-func runFFmpegConcat(listFile, outPath string, genpts, verbose bool) error {
+func runFFmpegConcat(listFile, outPath string, genpts bool) error {
 	args := []string{"-y", "-f", "concat", "-safe", "0", "-i", listFile}
 	if genpts {
 		args = append(args, "-fflags", "+genpts")
@@ -555,22 +780,19 @@ func cleanupOld(cfg Config) error {
 	}
 
 	if len(toDelete) == 0 {
-		if cfg.Verbose {
-			log.Printf("no files older than %d days", cfg.Days)
-		}
+		logInfo("Cleanup: no files older than %d days", cfg.Days)
 		return nil
 	}
 	sort.Strings(toDelete)
+	logInfo("Cleanup: deleting %d file(s) older than %d days (end < %s)", len(toDelete), cfg.Days, cutoff.Format(time.RFC3339))
 	for _, p := range toDelete {
 		if cfg.DryRun {
-			log.Printf("[dry-run] would delete %s", p)
+			logInfo("[dry-run] Delete %s", p)
 			continue
 		}
-		if cfg.Verbose {
-			log.Printf("deleting %s", p)
-		}
+		logDebug("Deleting %s", p)
 		if err := os.Remove(p); err != nil {
-			log.Printf("failed to delete %s: %v", p, err)
+			logWarn("Failed to delete %s: %v", p, err)
 		}
 	}
 	return nil
