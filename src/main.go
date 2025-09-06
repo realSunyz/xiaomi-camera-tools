@@ -68,20 +68,20 @@ type Config struct {
 	OutExt     string
 	DoMerge    bool
 	DoCleanup  bool
-    Days       int
-    MergedDays int
+	Days       int
+	MergedDays int
 	Overwrite  bool
 	DryRun     bool
 	Verbose    bool
-    GenPTS     bool
-    DeleteSegs bool
-    SkipToday  bool
-    Daemon     bool
-    DailyAt    string
-    Cron       string
-    AvoidNegTS bool
-    FastStart  bool
-    MP4Scale   int
+	GenPTS     bool
+	DeleteSegs bool
+	SkipToday  bool
+	Daemon     bool
+	DailyAt    string
+	Cron       string
+	AvoidNegTS bool
+	FastStart  bool
+	MP4Scale   int
 }
 
 var gVerbose bool
@@ -97,12 +97,12 @@ func logDebug(format string, args ...any) {
 }
 
 func main() {
-    cfg := parseFlags()
-    log.SetOutput(os.Stdout)
-    gVerbose = cfg.Verbose
-    currentCfg = cfg
-    logInfo("xiaomi-video starting: dir=%s outDir=%s outExt=%s merge=%v cleanup=%v days=%d mergedDays=%d overwrite=%v dryRun=%v genpts=%v avoidNegTS=%v faststart=%v mp4Timescale=%d deleteSegments=%v skipToday=%v daemon=%v dailyAt=%s cron='%s'",
-        cfg.Dir, cfg.OutDir, cfg.OutExt, cfg.DoMerge, cfg.DoCleanup, cfg.Days, cfg.MergedDays, cfg.Overwrite, cfg.DryRun, cfg.GenPTS, cfg.AvoidNegTS, cfg.FastStart, cfg.MP4Scale, cfg.DeleteSegs, cfg.SkipToday, cfg.Daemon, cfg.DailyAt, cfg.Cron)
+	cfg := parseFlags()
+	log.SetOutput(os.Stdout)
+	gVerbose = cfg.Verbose
+	currentCfg = cfg
+	logInfo("xiaomi-video starting: dir=%s outDir=%s outExt=%s merge=%v cleanup=%v days=%d mergedDays=%d overwrite=%v dryRun=%v genpts=%v avoidNegTS=%v faststart=%v mp4Timescale=%d deleteSegments=%v skipToday=%v daemon=%v dailyAt=%s cron='%s'",
+		cfg.Dir, cfg.OutDir, cfg.OutExt, cfg.DoMerge, cfg.DoCleanup, cfg.Days, cfg.MergedDays, cfg.Overwrite, cfg.DryRun, cfg.GenPTS, cfg.AvoidNegTS, cfg.FastStart, cfg.MP4Scale, cfg.DeleteSegs, cfg.SkipToday, cfg.Daemon, cfg.DailyAt, cfg.Cron)
 
 	if cfg.Daemon {
 		if strings.TrimSpace(cfg.Cron) != "" {
@@ -160,16 +160,20 @@ func runOnce(cfg Config) error {
 			return err
 		}
 	}
-    if cfg.DoCleanup {
-        if err := cleanupOld(cfg); err != nil { return err }
-        if err := cleanupMerged(cfg); err != nil { return err }
-    }
+	if cfg.DoCleanup {
+		if err := cleanupOld(cfg); err != nil {
+			return err
+		}
+		if err := cleanupMerged(cfg); err != nil {
+			return err
+		}
+	}
 	logInfo("Run finished in %s", time.Since(start).Truncate(time.Second))
 	return nil
 }
 
 func nextRunTime(hhmm string) (time.Time, error) {
-    parts := strings.Split(hhmm, ":")
+	parts := strings.Split(hhmm, ":")
 	if len(parts) != 2 {
 		return time.Time{}, fmt.Errorf("invalid HH:MM: %s", hhmm)
 	}
@@ -336,8 +340,8 @@ const (
 	envOutExt     = "XIAOMI_VIDEO_OUT_EXT"
 	envMerge      = "XIAOMI_VIDEO_MERGE"
 	envCleanup    = "XIAOMI_VIDEO_CLEANUP"
-    envDays       = "XIAOMI_VIDEO_DAYS"
-    envMergedDays = "XIAOMI_VIDEO_MERGED_DAYS"
+	envDays       = "XIAOMI_VIDEO_DAYS"
+	envMergedDays = "XIAOMI_VIDEO_MERGED_DAYS"
 	envOverwrite  = "XIAOMI_VIDEO_OVERWRITE"
 	envDryRun     = "XIAOMI_VIDEO_DRY_RUN"
 	envVerbose    = "XIAOMI_VIDEO_VERBOSE"
@@ -346,10 +350,10 @@ const (
 	envSkipToday  = "XIAOMI_VIDEO_SKIP_TODAY"
 	envDaemon     = "XIAOMI_VIDEO_DAEMON"
 	envDailyAt    = "XIAOMI_VIDEO_DAILY_AT"
-    envCron       = "XIAOMI_VIDEO_CRON"
-    envAvoidNegTS = "XIAOMI_VIDEO_AVOID_NEGATIVE_TS"
-    envFastStart  = "XIAOMI_VIDEO_FASTSTART"
-    envMP4Scale   = "XIAOMI_VIDEO_MP4_TIMESCALE"
+	envCron       = "XIAOMI_VIDEO_CRON"
+	envAvoidNegTS = "XIAOMI_VIDEO_AVOID_NEGATIVE_TS"
+	envFastStart  = "XIAOMI_VIDEO_FASTSTART"
+	envMP4Scale   = "XIAOMI_VIDEO_MP4_TIMESCALE"
 )
 
 func envString(key, def string) string {
@@ -387,20 +391,20 @@ func parseFlags() Config {
 	defOutExt := envString(envOutExt, ".mp4")
 	defMerge := envBool(envMerge, true)
 	defCleanup := envBool(envCleanup, true)
-    defDays := envInt(envDays, 14)
-    defMergedDays := envInt(envMergedDays, 30)
+	defDays := envInt(envDays, 14)
+	defMergedDays := envInt(envMergedDays, 30)
 	defOverwrite := envBool(envOverwrite, false)
 	defDryRun := envBool(envDryRun, false)
-    defVerbose := envBool(envVerbose, false)
-    defGenPTS := envBool(envGenPTS, true)
-    defDelete := envBool(envDeleteSegs, false)
-    defSkipToday := envBool(envSkipToday, true)
-    defDaemon := envBool(envDaemon, false)
-    defDailyAt := envString(envDailyAt, "10:00")
-    defCron := envString(envCron, "0 10 * * *")
-    defAvoidNegTS := envBool(envAvoidNegTS, true)
-    defFastStart := envBool(envFastStart, true)
-    defMP4Scale := envInt(envMP4Scale, 90000)
+	defVerbose := envBool(envVerbose, false)
+	defGenPTS := envBool(envGenPTS, true)
+	defDelete := envBool(envDeleteSegs, false)
+	defSkipToday := envBool(envSkipToday, true)
+	defDaemon := envBool(envDaemon, false)
+	defDailyAt := envString(envDailyAt, "10:00")
+	defCron := envString(envCron, "0 10 * * *")
+	defAvoidNegTS := envBool(envAvoidNegTS, true)
+	defFastStart := envBool(envFastStart, true)
+	defMP4Scale := envInt(envMP4Scale, 90000)
 
 	var cfg Config
 	flag.StringVar(&cfg.Dir, "dir", defDir, "Input directory to scan")
@@ -408,20 +412,20 @@ func parseFlags() Config {
 	flag.StringVar(&cfg.OutExt, "out-ext", defOutExt, "Extension for merged output (e.g., .mp4)")
 	flag.BoolVar(&cfg.DoMerge, "merge", defMerge, "Run daily merge")
 	flag.BoolVar(&cfg.DoCleanup, "cleanup", defCleanup, "Delete videos older than --days")
-    flag.IntVar(&cfg.Days, "days", defDays, "Delete files older than N days (by end timestamp)")
-    flag.IntVar(&cfg.MergedDays, "merged-days", defMergedDays, "Delete merged outputs older than N days (by end timestamp)")
+	flag.IntVar(&cfg.Days, "days", defDays, "Delete files older than N days (by end timestamp)")
+	flag.IntVar(&cfg.MergedDays, "merged-days", defMergedDays, "Delete merged outputs older than N days (by end timestamp)")
 	flag.BoolVar(&cfg.Overwrite, "overwrite", defOverwrite, "Overwrite existing merged outputs")
 	flag.BoolVar(&cfg.DryRun, "dry-run", defDryRun, "Show actions without making changes")
 	flag.BoolVar(&cfg.Verbose, "v", defVerbose, "Verbose logging")
-    flag.BoolVar(&cfg.GenPTS, "genpts", defGenPTS, "Use -fflags +genpts (rebuild PTS)")
-    flag.BoolVar(&cfg.DeleteSegs, "delete-segments", defDelete, "Delete original segments after successful merge")
-    flag.BoolVar(&cfg.SkipToday, "skip-today", defSkipToday, "Skip processing content that belongs to today (default true)")
-    flag.BoolVar(&cfg.Daemon, "daemon", defDaemon, "Run as a daily scheduler (do not exit)")
-    flag.StringVar(&cfg.DailyAt, "daily-at", defDailyAt, "Daily time to run in HH:MM (local time). Deprecated if --cron is set")
-    flag.StringVar(&cfg.Cron, "cron", defCron, "Cron schedule (5 fields: M H DOM MON DOW). Overrides --daily-at if set")
-    flag.BoolVar(&cfg.AvoidNegTS, "avoid-negative-ts", defAvoidNegTS, "Apply -avoid_negative_ts make_zero (default on)")
-    flag.BoolVar(&cfg.FastStart, "faststart", defFastStart, "Apply -movflags +faststart for MP4 (default on)")
-    flag.IntVar(&cfg.MP4Scale, "mp4-timescale", defMP4Scale, "Apply -video_track_timescale for MP4 (default 90000)")
+	flag.BoolVar(&cfg.GenPTS, "genpts", defGenPTS, "Use -fflags +genpts (rebuild PTS)")
+	flag.BoolVar(&cfg.DeleteSegs, "delete-segments", defDelete, "Delete original segments after successful merge")
+	flag.BoolVar(&cfg.SkipToday, "skip-today", defSkipToday, "Skip processing content that belongs to today (default true)")
+	flag.BoolVar(&cfg.Daemon, "daemon", defDaemon, "Run as a daily scheduler (do not exit)")
+	flag.StringVar(&cfg.DailyAt, "daily-at", defDailyAt, "Daily time to run in HH:MM (local time). Deprecated if --cron is set")
+	flag.StringVar(&cfg.Cron, "cron", defCron, "Cron schedule (5 fields: M H DOM MON DOW). Overrides --daily-at if set")
+	flag.BoolVar(&cfg.AvoidNegTS, "avoid-negative-ts", defAvoidNegTS, "Apply -avoid_negative_ts make_zero (default on)")
+	flag.BoolVar(&cfg.FastStart, "faststart", defFastStart, "Apply -movflags +faststart for MP4 (default on)")
+	flag.IntVar(&cfg.MP4Scale, "mp4-timescale", defMP4Scale, "Apply -video_track_timescale for MP4 (default 90000)")
 	flag.Parse()
 
 	if cfg.OutDir == "" {
@@ -648,16 +652,23 @@ func splitCrossDaySegments(segs []Segment, cfg Config) ([]Segment, func(), error
 			if p.off > 0 {
 				args = append(args, "-ss", fmt.Sprintf("%d", p.off))
 			}
-            args = append(args, "-i", s.Path, "-t", fmt.Sprintf("%d", p.dur))
-            if cfg.GenPTS { args = append(args, "-fflags", "+genpts") }
-            // Output options before output file
-            args = append(args, "-c", "copy")
-            if cfg.AvoidNegTS { args = append(args, "-avoid_negative_ts", "make_zero") }
-            if strings.EqualFold(ext, ".mp4") {
-                if cfg.FastStart { args = append(args, "-movflags", "+faststart") }
-                if cfg.MP4Scale > 0 { args = append(args, "-video_track_timescale", fmt.Sprintf("%d", cfg.MP4Scale)) }
-            }
-            args = append(args, tmp)
+			args = append(args, "-i", s.Path, "-t", fmt.Sprintf("%d", p.dur))
+			if cfg.GenPTS {
+				args = append(args, "-fflags", "+genpts")
+			}
+			args = append(args, "-c", "copy")
+			if cfg.AvoidNegTS {
+				args = append(args, "-avoid_negative_ts", "make_zero")
+			}
+			if strings.EqualFold(ext, ".mp4") {
+				if cfg.FastStart {
+					args = append(args, "-movflags", "+faststart")
+				}
+				if cfg.MP4Scale > 0 {
+					args = append(args, "-video_track_timescale", fmt.Sprintf("%d", cfg.MP4Scale))
+				}
+			}
+			args = append(args, tmp)
 			logDebug("ffmpeg trim %s -> %s (off=%ds dur=%ds)", s.Path, tmp, p.off, p.dur)
 			if err := runFFmpeg(args); err != nil {
 				cleanup()
@@ -748,21 +759,25 @@ func writeConcatList(segs []Segment) (string, func(), error) {
 }
 
 func runFFmpegConcat(listFile, outPath string, genpts bool) error {
-    args := []string{"-y", "-f", "concat", "-safe", "0", "-i", listFile}
-    if genpts {
-        args = append(args, "-fflags", "+genpts")
-    }
-    args = append(args, "-c", "copy")
-    // Global options for output
-    if currentCfg.AvoidNegTS { args = append(args, "-avoid_negative_ts", "make_zero") }
-    // If mp4 output, apply mp4-related flags
-    if strings.EqualFold(filepath.Ext(outPath), ".mp4") {
-        if currentCfg.FastStart { args = append(args, "-movflags", "+faststart") }
-        if currentCfg.MP4Scale > 0 { args = append(args, "-video_track_timescale", fmt.Sprintf("%d", currentCfg.MP4Scale)) }
-    }
-    args = append(args, outPath)
+	args := []string{"-y", "-f", "concat", "-safe", "0", "-i", listFile}
+	if genpts {
+		args = append(args, "-fflags", "+genpts")
+	}
+	args = append(args, "-c", "copy")
+	if currentCfg.AvoidNegTS {
+		args = append(args, "-avoid_negative_ts", "make_zero")
+	}
+	if strings.EqualFold(filepath.Ext(outPath), ".mp4") {
+		if currentCfg.FastStart {
+			args = append(args, "-movflags", "+faststart")
+		}
+		if currentCfg.MP4Scale > 0 {
+			args = append(args, "-video_track_timescale", fmt.Sprintf("%d", currentCfg.MP4Scale))
+		}
+	}
+	args = append(args, outPath)
 
-    cmd := exec.Command("ffmpeg", args...)
+	cmd := exec.Command("ffmpeg", args...)
 	var stdout, stderr io.ReadCloser
 	var err error
 	if stdout, err = cmd.StdoutPipe(); err != nil {
@@ -783,32 +798,31 @@ func runFFmpegConcat(listFile, outPath string, genpts bool) error {
 }
 
 func cleanupOld(cfg Config) error {
-    cutoff := time.Now().AddDate(0, 0, -cfg.Days)
-    var toDelete []string
-    err := filepath.WalkDir(cfg.Dir, func(path string, d os.DirEntry, err error) error {
-        if err != nil {
-            return err
-        }
-        if d.IsDir() {
-            return nil
-        }
-        base := filepath.Base(path)
-        // 仅清理“原始分段”文件：要求带前缀的命名，如 00_YYYY..._YYYY...
-        if !reWithPrefix.MatchString(base) {
-            return nil
-        }
-        s, e, _, ok := parseSegment(base)
-        if !ok {
-            return nil
-        }
-        if e.Before(s) {
-            return nil
-        }
-        if e.Before(cutoff) {
-            toDelete = append(toDelete, path)
-        }
-        return nil
-    })
+	cutoff := time.Now().AddDate(0, 0, -cfg.Days)
+	var toDelete []string
+	err := filepath.WalkDir(cfg.Dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		base := filepath.Base(path)
+		if !reWithPrefix.MatchString(base) {
+			return nil
+		}
+		s, e, _, ok := parseSegment(base)
+		if !ok {
+			return nil
+		}
+		if e.Before(s) {
+			return nil
+		}
+		if e.Before(cutoff) {
+			toDelete = append(toDelete, path)
+		}
+		return nil
+	})
 	if err != nil {
 		return err
 	}
@@ -832,34 +846,52 @@ func cleanupOld(cfg Config) error {
 	return nil
 }
 
-// cleanupMerged removes merged output files older than cfg.MergedDays by end timestamp.
 func cleanupMerged(cfg Config) error {
-    cutoff := time.Now().AddDate(0, 0, -cfg.MergedDays)
-    var toDelete []string
-    err := filepath.WalkDir(cfg.OutDir, func(path string, d os.DirEntry, err error) error {
-        if err != nil { return err }
-        if d.IsDir() { return nil }
-        base := filepath.Base(path)
-        if !reMerged.MatchString(base) { return nil }
-        s, e, _, ok := parseSegment(base)
-        if !ok { return nil }
-        if e.Before(s) { return nil }
-        if e.Before(cutoff) { toDelete = append(toDelete, path) }
-        return nil
-    })
-    if err != nil { return err }
-    if len(toDelete) == 0 {
-        logInfo("Cleanup(merged): no files older than %d days in %s", cfg.MergedDays, cfg.OutDir)
-        return nil
-    }
-    sort.Strings(toDelete)
-    logInfo("Cleanup(merged): deleting %d file(s) older than %d days (end < %s)", len(toDelete), cfg.MergedDays, cutoff.Format(time.RFC3339))
-    for _, p := range toDelete {
-        if cfg.DryRun { logInfo("[dry-run] Delete merged %s", p); continue }
-        logDebug("Deleting merged %s", p)
-        if err := os.Remove(p); err != nil { logWarn("Failed to delete merged %s: %v", p, err) }
-    }
-    return nil
+	cutoff := time.Now().AddDate(0, 0, -cfg.MergedDays)
+	var toDelete []string
+	err := filepath.WalkDir(cfg.OutDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		base := filepath.Base(path)
+		if !reMerged.MatchString(base) {
+			return nil
+		}
+		s, e, _, ok := parseSegment(base)
+		if !ok {
+			return nil
+		}
+		if e.Before(s) {
+			return nil
+		}
+		if e.Before(cutoff) {
+			toDelete = append(toDelete, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if len(toDelete) == 0 {
+		logInfo("Cleanup(merged): no files older than %d days in %s", cfg.MergedDays, cfg.OutDir)
+		return nil
+	}
+	sort.Strings(toDelete)
+	logInfo("Cleanup(merged): deleting %d file(s) older than %d days (end < %s)", len(toDelete), cfg.MergedDays, cutoff.Format(time.RFC3339))
+	for _, p := range toDelete {
+		if cfg.DryRun {
+			logInfo("[dry-run] Delete merged %s", p)
+			continue
+		}
+		logDebug("Deleting merged %s", p)
+		if err := os.Remove(p); err != nil {
+			logWarn("Failed to delete merged %s: %v", p, err)
+		}
+	}
+	return nil
 }
 
 func validateExtConsistency(segs []Segment) error {
