@@ -9,9 +9,9 @@ This README file is available in two languages: [English](https://github.com/rea
 1. Merge Xiaomi camera segmented videos by day
 2. Automatically clean up old videos
 
-> [WARNING]
+> [!WARNING]
 > Currently only supports the new Xiaomi camera file naming format:
-> 00_YYYYMMDDHHMMSS_YYYYMMDDHHMMSS (e.g., 00_20250101000000_20250101010000).
+> `00_YYYYMMDDHHMMSS_YYYYMMDDHHMMSS` (e.g., `00_20250101000000_20250101010000`).
 
 ## Usage
 
@@ -65,8 +65,6 @@ go build -o xiaomi-video ./src
 # Regular Run (once)
 ./xiaomi-video --dir [CAMERA-FOLDER] --out-dir [OUTPUT-FOLDER] -v
 ```
-
-## Configuration
 
 ## Configuration
 
