@@ -13,21 +13,6 @@ RUN apk add --no-cache ffmpeg tzdata ca-certificates && update-ca-certificates
 ENV TZ=Asia/Shanghai \
     XIAOMI_VIDEO_DIR=/data/input \
     XIAOMI_VIDEO_OUT_DIR=/data/output \
-    XIAOMI_VIDEO_OUT_EXT=.mp4 \
-    XIAOMI_VIDEO_MERGE=true \
-    XIAOMI_VIDEO_CLEANUP=true \
-    XIAOMI_VIDEO_DAYS=30 \
-    XIAOMI_VIDEO_MERGED_DAYS=30 \
-    XIAOMI_VIDEO_OVERWRITE=false \
-    XIAOMI_VIDEO_DRY_RUN=false \
-    XIAOMI_VIDEO_VERBOSE=true \
-    XIAOMI_VIDEO_GENPTS=true \
-    XIAOMI_VIDEO_AVOID_NEGATIVE_TS=true \
-    XIAOMI_VIDEO_FASTSTART=true \
-    XIAOMI_VIDEO_MP4_TIMESCALE=90000 \
-    XIAOMI_VIDEO_DELETE_SEGMENTS=true \
-    XIAOMI_VIDEO_DAEMON=true \
-    XIAOMI_VIDEO_DAILY_AT=10:00 \
     XIAOMI_VIDEO_CRON="0 10 * * *"
 
 WORKDIR /work

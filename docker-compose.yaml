@@ -1,0 +1,16 @@
+services:
+  xiaomi-camera-tools:
+    image: ghcr.io/realsunyz/xiaomi-camera-tools:latest
+    container_name: xiaomi-camera-tools
+    restart: unless-stopped
+    privileged: true
+    environment:
+      - TZ=Asia/Shanghai
+      - XIAOMI_VIDEO_DIR=/data/input
+      - XIAOMI_VIDEO_OUT_DIR=/data/output
+      - XIAOMI_VIDEO_DAYS=7
+      - XIAOMI_VIDEO_MERGED_DAYS=90
+      - XIAOMI_VIDEO_CRON="0 8 * * *"
+    volumes:
+      - /path/to/input:/data/input
+      - /path/to/output:/data/output
