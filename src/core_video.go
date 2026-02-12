@@ -144,7 +144,10 @@ func ensureFFmpeg() error {
 }
 
 func runFFmpeg(args []string) error {
-	cmd := exec.Command("ffmpeg", args...)
+	ffmpegArgs := make([]string, 0, len(args)+4)
+	ffmpegArgs = append(ffmpegArgs, "-hide_banner", "-nostats", "-loglevel", "error")
+	ffmpegArgs = append(ffmpegArgs, args...)
+	cmd := exec.Command("ffmpeg", ffmpegArgs...)
 	var stdout, stderr io.ReadCloser
 	var err error
 	if stdout, err = cmd.StdoutPipe(); err != nil {
