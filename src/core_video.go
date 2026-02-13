@@ -138,6 +138,10 @@ func absClean(path string) string {
 	return filepath.Clean(abs)
 }
 
+func dayStart(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+}
+
 func ensureFFmpeg() error {
 	_, err := exec.LookPath("ffmpeg")
 	return err
@@ -304,7 +308,7 @@ func mergeByDay(cfg Config) error {
 
 	// Skip-today is always enabled to avoid touching files that may still be recording.
 	now := time.Now()
-	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	todayStart := dayStart(now)
 	segsEligible := make([]Segment, 0, len(segs))
 	for _, s := range segs {
 		if s.EndTime.Before(todayStart) {
@@ -352,7 +356,9 @@ func mergeByDay(cfg Config) error {
 			continue
 		}
 
-		outName := fmt.Sprintf("%s_%s%s", first.StartTime.Format(tsLayout), last.EndTime.Format(tsLayout), mergedOutExt)
+		dayStartTS := day + "000000"
+		dayEndTS := day + "235959"
+		outName := fmt.Sprintf("%s_%s%s", dayStartTS, dayEndTS, mergedOutExt)
 		outDir := cfg.OutDir
 		if g.SourceKey != "" {
 			outDir = filepath.Join(cfg.OutDir, g.SourceKey)
@@ -375,6 +381,9 @@ func mergeByDay(cfg Config) error {
 			mergeErr = err
 			continue
 		}
+		if err := cleanupStaleDailyOutputs(outDir, day, outName); err != nil {
+			logWarn("Cleanup stale merged outputs failed for source=%s day=%s: %v", g.SourceKey, day, err)
+		}
 		logInfo("Done source=%s day=%s -> %s", g.SourceKey, day, outPath)
 		successDays++
 	}
@@ -384,6 +393,42 @@ func mergeByDay(cfg Config) error {
 	}
 	logInfo("Merging finished; successful days: %d", successDays)
 
+	return nil
+}
+
+func cleanupStaleDailyOutputs(outDir, day, keepName string) error {
+	entries, err := os.ReadDir(outDir)
+	if err != nil {
+		return err
+	}
+	removed := 0
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if name == keepName {
+			continue
+		}
+		s, eTime, ext, ok := parseMergedSegment(name)
+		if !ok {
+			continue
+		}
+		if !strings.EqualFold(ext, ".mp4") {
+			continue
+		}
+		if s.Format("20060102") != day || eTime.Format("20060102") != day {
+			continue
+		}
+		if err := os.Remove(filepath.Join(outDir, name)); err != nil {
+			logWarn("Failed to remove stale merged output %s: %v", filepath.Join(outDir, name), err)
+			continue
+		}
+		removed++
+	}
+	if removed > 0 {
+		logInfo("Removed %d stale merged output(s) for day=%s in %s", removed, day, outDir)
+	}
 	return nil
 }
 
@@ -502,9 +547,10 @@ func cleanupOld(cfg Config) error {
 	if days == 0 {
 		// Immediate mode: remove finished-day raw segments after merge,
 		// while still keeping today's potentially active recordings.
-		cutoff = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+		cutoff = dayStart(now)
 	} else {
-		cutoff = now.AddDate(0, 0, -days)
+		// Natural-day retention to avoid trimming one day incrementally by clock time.
+		cutoff = dayStart(now.AddDate(0, 0, -days))
 	}
 	var toDelete []string
 	err := filepath.WalkDir(dirAbs, func(path string, d os.DirEntry, err error) error {
@@ -563,7 +609,7 @@ func cleanupMerged(cfg Config) error {
 	}
 
 	days := *cfg.MergedDays
-	cutoff := time.Now().AddDate(0, 0, -days)
+	cutoff := dayStart(time.Now().AddDate(0, 0, -days))
 	var toDelete []string
 	err := filepath.WalkDir(cfg.OutDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
