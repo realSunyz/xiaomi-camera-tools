@@ -24,6 +24,19 @@ func envString(key, def string) string {
 	return def
 }
 
+func trimMatchingQuotes(s string) string {
+	s = strings.TrimSpace(s)
+	for len(s) >= 2 {
+		first, last := s[0], s[len(s)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+			s = strings.TrimSpace(s[1 : len(s)-1])
+			continue
+		}
+		break
+	}
+	return s
+}
+
 func envOptionalInt(key string) (*int, error) {
 	if v, ok := os.LookupEnv(key); ok && strings.TrimSpace(v) != "" {
 		i, err := strconv.Atoi(strings.TrimSpace(v))
@@ -50,7 +63,7 @@ func parseFlags() Config {
 
 	cfg.Dir = envString(envDir, ".")
 	cfg.OutDir = envString(envOutDir, "")
-	cfg.Cron = strings.TrimSpace(envString(envCron, ""))
+	cfg.Cron = trimMatchingQuotes(envString(envCron, ""))
 
 	days, err := envOptionalInt(envDays)
 	if err != nil {
@@ -90,7 +103,7 @@ func parseFlags() Config {
 	if cfg.OutDir == "" {
 		cfg.OutDir = filepath.Join(cfg.Dir, "daily")
 	}
-	cfg.Cron = strings.TrimSpace(cfg.Cron)
+	cfg.Cron = trimMatchingQuotes(cfg.Cron)
 
 	return cfg
 }

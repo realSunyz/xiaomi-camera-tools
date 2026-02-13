@@ -119,16 +119,16 @@ const (
 	logTimeLayout         = time.RFC3339
 )
 
-func logLine(level, component, format string, args ...any) {
+func logLine(level, format string, args ...any) {
 	msg := strings.TrimSpace(fmt.Sprintf(format, args...))
 	msg = strings.ReplaceAll(msg, "\n", "\\n")
-	log.Printf("ts=%s level=%s component=%s msg=%s", time.Now().Format(logTimeLayout), level, component, msg)
+	log.Printf("%s [%s] %s", time.Now().Format(logTimeLayout), level, msg)
 }
 
-func logInfo(format string, args ...any)  { logLine("INFO", "app", format, args...) }
-func logWarn(format string, args ...any)  { logLine("WARN", "app", format, args...) }
-func logError(format string, args ...any) { logLine("ERROR", "app", format, args...) }
-func logFatal(format string, args ...any) { logLine("FATAL", "app", format, args...) }
+func logInfo(format string, args ...any)  { logLine("INFO", format, args...) }
+func logWarn(format string, args ...any)  { logLine("WARN", format, args...) }
+func logError(format string, args ...any) { logLine("ERROR", format, args...) }
+func logFatal(format string, args ...any) { logLine("FATAL", format, args...) }
 
 func absClean(path string) string {
 	abs, err := filepath.Abs(path)
@@ -166,15 +166,15 @@ func runFFmpeg(args []string) error {
 
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go streamProcessOutput("ffmpeg", "stdout", stdout, &wg)
-	go streamProcessOutput("ffmpeg", "stderr", stderr, &wg)
+	go streamProcessOutput("stdout", stdout, &wg)
+	go streamProcessOutput("stderr", stderr, &wg)
 
 	waitErr := cmd.Wait()
 	wg.Wait()
 	return waitErr
 }
 
-func streamProcessOutput(component, stream string, r io.Reader, wg *sync.WaitGroup) {
+func streamProcessOutput(stream string, r io.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
 	scanner := bufio.NewScanner(r)
 	buf := make([]byte, 0, 64*1024)
@@ -184,10 +184,14 @@ func streamProcessOutput(component, stream string, r io.Reader, wg *sync.WaitGro
 		if line == "" {
 			continue
 		}
-		logLine("INFO", component, "%s", line)
+		if stream == "stderr" {
+			logError("%s", line)
+		} else {
+			logInfo("%s", line)
+		}
 	}
 	if err := scanner.Err(); err != nil {
-		logWarn("%s %s stream read error: %v", component, stream, err)
+		logWarn("ffmpeg %s stream read error: %v", stream, err)
 	}
 }
 
