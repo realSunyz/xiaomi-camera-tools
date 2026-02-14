@@ -39,13 +39,13 @@ jobs:
           CGO_ENABLED: 0
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags="-s -w" -o dist/xiaomi-video-linux-${{ matrix.goarch }} ./src
+          go build -trimpath -ldflags="-s -w" -o dist/xiaomi-camera-tools-linux-${{ matrix.goarch }} ./src
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: xiaomi-video-linux-${{ matrix.goarch }}
-          path: dist/xiaomi-video-linux-${{ matrix.goarch }}
+          name: xiaomi-camera-tools-linux-${{ matrix.goarch }}
+          path: dist/xiaomi-camera-tools-linux-${{ matrix.goarch }}
 
   docker-dev:
     name: Build Docker Image (${{ matrix.goarch }})

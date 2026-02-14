@@ -36,12 +36,12 @@ jobs:
           CGO_ENABLED: 0
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags="-s -w" -o dist/xiaomi-video-linux-${{ matrix.goarch }} ./src
+          go build -trimpath -ldflags="-s -w" -o dist/xiaomi-camera-tools-linux-${{ matrix.goarch }} ./src
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/xiaomi-video-linux-${{ matrix.goarch }}
+          files: dist/xiaomi-camera-tools-linux-${{ matrix.goarch }}
 
   docker-release:
     name: Build Docker Image (${{ matrix.goarch }})
