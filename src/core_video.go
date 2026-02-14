@@ -185,13 +185,13 @@ func streamProcessOutput(stream string, r io.Reader, wg *sync.WaitGroup) {
 			continue
 		}
 		if stream == "stderr" {
-			logError("%s", line)
+			logError("FFmpeg: %s", line)
 		} else {
-			logInfo("%s", line)
+			logInfo("FFmpeg: %s", line)
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		logWarn("ffmpeg %s stream read error: %v", stream, err)
+		logWarn("FFmpeg %s stream read error: %v", stream, err)
 	}
 }
 
@@ -278,7 +278,6 @@ func collectSegments(root, outDir string) ([]Segment, error) {
 		})
 		return nil
 	})
-	logInfo("Found %d raw segment(s) in %s", len(segments), rootAbs)
 	return segments, err
 }
 
@@ -319,9 +318,7 @@ func mergeByDay(cfg Config) error {
 			segsEligible = append(segsEligible, s)
 		}
 	}
-	logInfo("Skip-today(fixed): eligible %d/%d (end < %s)", len(segsEligible), len(segs), todayStart.Format(time.RFC3339))
 	if len(segsEligible) == 0 {
-		logInfo("No segments to process after skip-today filter")
 		return nil
 	}
 
@@ -360,9 +357,7 @@ func mergeByDay(cfg Config) error {
 			continue
 		}
 
-		dayStartTS := day + "000000"
-		dayEndTS := day + "235959"
-		outName := fmt.Sprintf("%s_%s%s", dayStartTS, dayEndTS, mergedOutExt)
+		outName := fmt.Sprintf("%s_%s%s", first.StartTime.Format(tsLayout), last.EndTime.Format(tsLayout), mergedOutExt)
 		outDir := cfg.OutDir
 		if g.SourceKey != "" {
 			outDir = filepath.Join(cfg.OutDir, g.SourceKey)
@@ -370,16 +365,16 @@ func mergeByDay(cfg Config) error {
 		outPath := filepath.Join(outDir, outName)
 
 		if err := os.MkdirAll(outDir, 0o755); err != nil {
-			return fmt.Errorf("create out dir: %w", err)
+			return fmt.Errorf("Create output directory failed: %w", err)
 		}
 
 		listFile, cleanup, err := writeConcatList(g.Segments)
 		if err != nil {
-			return fmt.Errorf("make concat list: %w", err)
+			return fmt.Errorf("Create concat list failed: %w", err)
 		}
 		defer cleanup()
 
-		logInfo("Merging source=%s day=%s: %d segments -> %s", g.SourceKey, day, len(g.Segments), outPath)
+		logInfo("Merging %d segment(s) -> %s", len(g.Segments), outPath)
 		if err := runFFmpegConcat(listFile, outPath); err != nil {
 			logError("Merge failed for source=%s day=%s: %v", g.SourceKey, day, err)
 			mergeErr = err
@@ -388,7 +383,6 @@ func mergeByDay(cfg Config) error {
 		if err := cleanupStaleDailyOutputs(outDir, day, outName); err != nil {
 			logWarn("Cleanup stale merged outputs failed for source=%s day=%s: %v", g.SourceKey, day, err)
 		}
-		logInfo("Done source=%s day=%s -> %s", g.SourceKey, day, outPath)
 		successDays++
 	}
 	if mergeErr != nil {
@@ -510,7 +504,7 @@ func splitCrossDaySegments(segs []Segment) ([]Segment, func(), error) {
 			args = append(args, tmp)
 			if err := runFFmpeg(args); err != nil {
 				cleanup()
-				return nil, func() {}, fmt.Errorf("ffmpeg split failed: %w", err)
+				return nil, func() {}, fmt.Errorf("FFmpeg split failed: %w", err)
 			}
 			out = append(out, Segment{
 				Path:      tmp,
@@ -539,7 +533,7 @@ func validateExtConsistency(segs []Segment) error {
 
 func cleanupOld(cfg Config) error {
 	if cfg.Days == nil {
-		logInfo("Cleanup(raw): retention not set, keep forever")
+		logInfo("Cleanup (raw): retention not set, keep forever")
 		return nil
 	}
 
@@ -585,11 +579,11 @@ func cleanupOld(cfg Config) error {
 	}
 
 	if len(toDelete) == 0 {
-		logInfo("Cleanup(raw): no files older than %d days", days)
+		logInfo("Cleanup (raw): no files older than %d days", days)
 		return nil
 	}
 	sort.Strings(toDelete)
-	logInfo("Cleanup(raw): deleting %d file(s) older than %d days (end < %s)", len(toDelete), days, cutoff.Format(time.RFC3339))
+	logInfo("Cleanup (raw): deleting %d file(s) older than %d days (end < %s)", len(toDelete), days, cutoff.Format(time.RFC3339))
 	for _, p := range toDelete {
 		if err := os.Remove(p); err != nil {
 			logWarn("Failed to delete %s: %v", p, err)
@@ -600,13 +594,13 @@ func cleanupOld(cfg Config) error {
 
 func cleanupMerged(cfg Config) error {
 	if cfg.MergedDays == nil {
-		logInfo("Cleanup(merged): retention not set, keep forever")
+		logInfo("Cleanup (merged): retention not set, keep forever")
 		return nil
 	}
 
 	if _, err := os.Stat(cfg.OutDir); err != nil {
 		if os.IsNotExist(err) {
-			logInfo("Cleanup(merged): output directory does not exist yet, skip: %s", cfg.OutDir)
+			logInfo("Cleanup (merged): output directory does not exist yet, skip: %s", cfg.OutDir)
 			return nil
 		}
 		return err
@@ -645,11 +639,11 @@ func cleanupMerged(cfg Config) error {
 		return err
 	}
 	if len(toDelete) == 0 {
-		logInfo("Cleanup(merged): no files older than %d days in %s", days, cfg.OutDir)
+		logInfo("Cleanup (merged): no files older than %d days in %s", days, cfg.OutDir)
 		return nil
 	}
 	sort.Strings(toDelete)
-	logInfo("Cleanup(merged): deleting %d file(s) older than %d days (end < %s)", len(toDelete), days, cutoff.Format(time.RFC3339))
+	logInfo("Cleanup (merged): deleting %d file(s) older than %d days (end < %s)", len(toDelete), days, cutoff.Format(time.RFC3339))
 	for _, p := range toDelete {
 		if err := os.Remove(p); err != nil {
 			logWarn("Failed to delete merged %s: %v", p, err)

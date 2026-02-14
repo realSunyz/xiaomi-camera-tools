@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -67,22 +68,25 @@ func parseFlags() Config {
 
 	days, err := envOptionalInt(envDays)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid %s: %v\n", envDays, err)
+		logFatal("Invalid %s: %v", envDays, err)
 		os.Exit(2)
 	}
 	cfg.Days = days
 
 	mergedDays, err := envOptionalInt(envMergedDays)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid %s: %v\n", envMergedDays, err)
+		logFatal("Invalid %s: %v", envMergedDays, err)
 		os.Exit(2)
 	}
 	cfg.MergedDays = mergedDays
 
-	flag.StringVar(&cfg.Dir, "dir", cfg.Dir, "Input directory to scan")
-	flag.StringVar(&cfg.OutDir, "out-dir", cfg.OutDir, "Output directory for merged files (default: dir/daily)")
-	flag.StringVar(&cfg.Cron, "cron", cfg.Cron, "Cron schedule (5 fields: M H DOM MON DOW). If set, daemon mode is enabled")
-	flag.Func("days", "Raw segment retention days (unset=keep forever, 0=delete merged-day segments immediately)", func(v string) error {
+	fs := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	fs.StringVar(&cfg.Dir, "dir", cfg.Dir, "Input directory to scan")
+	fs.StringVar(&cfg.OutDir, "out-dir", cfg.OutDir, "Output directory for merged files (default: dir/daily)")
+	fs.StringVar(&cfg.Cron, "cron", cfg.Cron, "Cron schedule (5 fields: M H DOM MON DOW). If set, daemon mode is enabled")
+	fs.Func("days", "Raw segment retention days (unset=keep forever, 0=delete merged-day segments immediately)", func(v string) error {
 		i, err := strconv.Atoi(strings.TrimSpace(v))
 		if err != nil || i < 0 {
 			return fmt.Errorf("--days must be >= 0")
@@ -90,7 +94,7 @@ func parseFlags() Config {
 		cfg.Days = &i
 		return nil
 	})
-	flag.Func("merged-days", "Merged output retention days (unset=keep forever)", func(v string) error {
+	fs.Func("merged-days", "Merged output retention days (unset=keep forever)", func(v string) error {
 		i, err := strconv.Atoi(strings.TrimSpace(v))
 		if err != nil || i < 0 {
 			return fmt.Errorf("--merged-days must be >= 0")
@@ -98,7 +102,10 @@ func parseFlags() Config {
 		cfg.MergedDays = &i
 		return nil
 	})
-	flag.Parse()
+	if err := fs.Parse(os.Args[1:]); err != nil {
+		logFatal("Invalid flags: %v", err)
+		os.Exit(2)
+	}
 
 	if cfg.OutDir == "" {
 		cfg.OutDir = filepath.Join(cfg.Dir, "daily")

@@ -9,10 +9,10 @@ import (
 )
 
 func main() {
-	cfg := parseFlags()
 	log.SetOutput(os.Stdout)
 	log.SetFlags(0)
 	log.SetPrefix("")
+	cfg := parseFlags()
 	daemonMode := strings.TrimSpace(cfg.Cron) != ""
 	logInfo("xiaomi-video starting: dir=%s outDir=%s ext=%s rawRetention=%s mergedRetention=%s skipToday=fixed(true) daemon=%v cron='%s'",
 		cfg.Dir, cfg.OutDir, mergedOutExt, optionalDaysText(cfg.Days), optionalDaysText(cfg.MergedDays), daemonMode, cfg.Cron)
@@ -47,7 +47,7 @@ func runOnce(cfg Config) error {
 	start := time.Now()
 	logInfo("Run started at %s", start.Format(time.RFC3339))
 	if err := ensureFFmpeg(); err != nil {
-		return fmt.Errorf("ffmpeg not found: %w", err)
+		return fmt.Errorf("FFmpeg not found: %w", err)
 	}
 	if err := mergeByDay(cfg); err != nil {
 		return err
