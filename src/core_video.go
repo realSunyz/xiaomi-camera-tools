@@ -299,7 +299,7 @@ func groupBySourceAndDay(segs []Segment) map[string]*DayGroup {
 	return groups
 }
 
-func mergeByDay(cfg Config) error {
+func mergeByDay(cfg Config, onlyYesterday bool) error {
 	segs, err := collectSegments(cfg.Dir, cfg.OutDir)
 	if err != nil {
 		return err
@@ -312,11 +312,16 @@ func mergeByDay(cfg Config) error {
 	// Skip-today is always enabled to avoid touching files that may still be recording.
 	now := time.Now()
 	todayStart := dayStart(now)
+	yesterdayStart := todayStart.AddDate(0, 0, -1)
 	segsEligible := make([]Segment, 0, len(segs))
 	for _, s := range segs {
-		if s.EndTime.Before(todayStart) {
-			segsEligible = append(segsEligible, s)
+		if !s.EndTime.Before(todayStart) {
+			continue
 		}
+		if onlyYesterday && !s.EndTime.After(yesterdayStart) {
+			continue
+		}
+		segsEligible = append(segsEligible, s)
 	}
 	if len(segsEligible) == 0 {
 		return nil

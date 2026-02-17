@@ -19,6 +19,10 @@ func main() {
 
 	if daemonMode {
 		logInfo("Daemon mode enabled by CRON='%s' (TZ=%s)", cfg.Cron, os.Getenv("TZ"))
+		// First run after startup: rebuild all historical days.
+		if err := runOnce(cfg, false); err != nil {
+			logError("Run failed: %v", err)
+		}
 		for {
 			next, err := nextCronTime(cfg.Cron, time.Now())
 			if err != nil {
@@ -31,25 +35,26 @@ func main() {
 			}
 			logInfo("Next run at %s (in %s)", next.Format(time.RFC3339), wait.Truncate(time.Second))
 			time.Sleep(wait)
-			if err := runOnce(cfg); err != nil {
+			// Scheduled runs: only generate yesterday.
+			if err := runOnce(cfg, true); err != nil {
 				logError("Run failed: %v", err)
 			}
 		}
 	} else {
-		if err := runOnce(cfg); err != nil {
+		if err := runOnce(cfg, false); err != nil {
 			logFatal("Run failed: %v", err)
 			os.Exit(1)
 		}
 	}
 }
 
-func runOnce(cfg Config) error {
+func runOnce(cfg Config, onlyYesterday bool) error {
 	start := time.Now()
 	logInfo("Run started at %s", start.Format(time.RFC3339))
 	if err := ensureFFmpeg(); err != nil {
 		return fmt.Errorf("FFmpeg not found: %w", err)
 	}
-	if err := mergeByDay(cfg); err != nil {
+	if err := mergeByDay(cfg, onlyYesterday); err != nil {
 		return err
 	}
 	if err := cleanupOld(cfg); err != nil {
