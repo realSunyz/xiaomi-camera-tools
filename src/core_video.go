@@ -313,12 +313,18 @@ func mergeByDay(cfg Config, onlyYesterday bool) error {
 	now := time.Now()
 	todayStart := dayStart(now)
 	yesterdayStart := todayStart.AddDate(0, 0, -1)
+	yesterdayDay := yesterdayStart.Format("20060102")
 	segsEligible := make([]Segment, 0, len(segs))
 	for _, s := range segs {
-		if !s.EndTime.Before(todayStart) {
+		if onlyYesterday {
+			// Scheduled mode: assign by segment start day (no cross-day split).
+			if s.StartTime.Format("20060102") != yesterdayDay {
+				continue
+			}
+			segsEligible = append(segsEligible, s)
 			continue
 		}
-		if onlyYesterday && !s.EndTime.After(yesterdayStart) {
+		if !s.EndTime.Before(todayStart) {
 			continue
 		}
 		segsEligible = append(segsEligible, s)
@@ -327,9 +333,13 @@ func mergeByDay(cfg Config, onlyYesterday bool) error {
 		return nil
 	}
 
-	segsPre, tempCleanup, err := splitCrossDaySegments(segsEligible)
-	if err != nil {
-		return err
+	segsPre := segsEligible
+	tempCleanup := func() {}
+	if !onlyYesterday {
+		segsPre, tempCleanup, err = splitCrossDaySegments(segsEligible)
+		if err != nil {
+			return err
+		}
 	}
 	defer tempCleanup()
 
@@ -351,7 +361,7 @@ func mergeByDay(cfg Config, onlyYesterday bool) error {
 		first := g.Segments[0]
 		last := g.Segments[len(g.Segments)-1]
 
-		if first.StartTime.Format("20060102") != day || last.EndTime.Format("20060102") != day {
+		if !onlyYesterday && (first.StartTime.Format("20060102") != day || last.EndTime.Format("20060102") != day) {
 			logWarn("Skip merge for %s due to cross-day parts after preprocessing", day)
 			mergeErr = fmt.Errorf("group %s not single-day after preprocessing", day)
 			continue
@@ -385,7 +395,7 @@ func mergeByDay(cfg Config, onlyYesterday bool) error {
 			mergeErr = err
 			continue
 		}
-		if err := cleanupStaleDailyOutputs(outDir, day, outName); err != nil {
+		if err := cleanupStaleDailyOutputs(outDir, day, outName, onlyYesterday); err != nil {
 			logWarn("Cleanup stale merged outputs failed for source=%s day=%s: %v", g.SourceKey, day, err)
 		}
 		successDays++
@@ -399,7 +409,7 @@ func mergeByDay(cfg Config, onlyYesterday bool) error {
 	return nil
 }
 
-func cleanupStaleDailyOutputs(outDir, day, keepName string) error {
+func cleanupStaleDailyOutputs(outDir, day, keepName string, allowCrossDay bool) error {
 	entries, err := os.ReadDir(outDir)
 	if err != nil {
 		return err
@@ -420,7 +430,10 @@ func cleanupStaleDailyOutputs(outDir, day, keepName string) error {
 		if !strings.EqualFold(ext, ".mp4") {
 			continue
 		}
-		if s.Format("20060102") != day || eTime.Format("20060102") != day {
+		if s.Format("20060102") != day {
+			continue
+		}
+		if !allowCrossDay && eTime.Format("20060102") != day {
 			continue
 		}
 		if err := os.Remove(filepath.Join(outDir, name)); err != nil {
