@@ -309,22 +309,25 @@ func mergeByDay(cfg Config, onlyYesterday bool) error {
 		return nil
 	}
 
-	// Skip-today is always enabled to avoid touching files that may still be recording.
+	// Merge scope is decided by segment start day.
 	now := time.Now()
 	todayStart := dayStart(now)
 	yesterdayStart := todayStart.AddDate(0, 0, -1)
 	yesterdayDay := yesterdayStart.Format("20060102")
+	todayDay := todayStart.Format("20060102")
 	segsEligible := make([]Segment, 0, len(segs))
 	for _, s := range segs {
+		startDay := s.StartTime.Format("20060102")
 		if onlyYesterday {
-			// Scheduled mode: assign by segment start day (no cross-day split).
-			if s.StartTime.Format("20060102") != yesterdayDay {
+			// Scheduled mode: assign by segment start day.
+			if startDay != yesterdayDay {
 				continue
 			}
 			segsEligible = append(segsEligible, s)
 			continue
 		}
-		if !s.EndTime.Before(todayStart) {
+		// Full rebuild mode: include all days before today by segment start day.
+		if startDay >= todayDay {
 			continue
 		}
 		segsEligible = append(segsEligible, s)
@@ -333,17 +336,7 @@ func mergeByDay(cfg Config, onlyYesterday bool) error {
 		return nil
 	}
 
-	segsPre := segsEligible
-	tempCleanup := func() {}
-	if !onlyYesterday {
-		segsPre, tempCleanup, err = splitCrossDaySegments(segsEligible)
-		if err != nil {
-			return err
-		}
-	}
-	defer tempCleanup()
-
-	groups := groupBySourceAndDay(segsPre)
+	groups := groupBySourceAndDay(segsEligible)
 	groupKeys := make([]string, 0, len(groups))
 	for groupKey := range groups {
 		groupKeys = append(groupKeys, groupKey)
@@ -361,11 +354,6 @@ func mergeByDay(cfg Config, onlyYesterday bool) error {
 		first := g.Segments[0]
 		last := g.Segments[len(g.Segments)-1]
 
-		if !onlyYesterday && (first.StartTime.Format("20060102") != day || last.EndTime.Format("20060102") != day) {
-			logWarn("Skip merge for %s due to cross-day parts after preprocessing", day)
-			mergeErr = fmt.Errorf("group %s not single-day after preprocessing", day)
-			continue
-		}
 		if err := validateExtConsistency(g.Segments); err != nil {
 			logWarn("Skip merge for %s/%s: %v", g.SourceKey, day, err)
 			mergeErr = err
@@ -395,7 +383,7 @@ func mergeByDay(cfg Config, onlyYesterday bool) error {
 			mergeErr = err
 			continue
 		}
-		if err := cleanupStaleDailyOutputs(outDir, day, outName, onlyYesterday); err != nil {
+		if err := cleanupStaleDailyOutputs(outDir, day, outName); err != nil {
 			logWarn("Cleanup stale merged outputs failed for source=%s day=%s: %v", g.SourceKey, day, err)
 		}
 		successDays++
@@ -409,7 +397,7 @@ func mergeByDay(cfg Config, onlyYesterday bool) error {
 	return nil
 }
 
-func cleanupStaleDailyOutputs(outDir, day, keepName string, allowCrossDay bool) error {
+func cleanupStaleDailyOutputs(outDir, day, keepName string) error {
 	entries, err := os.ReadDir(outDir)
 	if err != nil {
 		return err
@@ -423,7 +411,7 @@ func cleanupStaleDailyOutputs(outDir, day, keepName string, allowCrossDay bool) 
 		if name == keepName {
 			continue
 		}
-		s, eTime, ext, ok := parseMergedSegment(name)
+		s, _, ext, ok := parseMergedSegment(name)
 		if !ok {
 			continue
 		}
@@ -431,9 +419,6 @@ func cleanupStaleDailyOutputs(outDir, day, keepName string, allowCrossDay bool) 
 			continue
 		}
 		if s.Format("20060102") != day {
-			continue
-		}
-		if !allowCrossDay && eTime.Format("20060102") != day {
 			continue
 		}
 		if err := os.Remove(filepath.Join(outDir, name)); err != nil {
@@ -446,94 +431,6 @@ func cleanupStaleDailyOutputs(outDir, day, keepName string, allowCrossDay bool) 
 		logInfo("Removed %d stale merged output(s) for day=%s in %s", removed, day, outDir)
 	}
 	return nil
-}
-
-func splitCrossDaySegments(segs []Segment) ([]Segment, func(), error) {
-	temps := make([]string, 0)
-	cleanup := func() {
-		for _, p := range temps {
-			_ = os.Remove(p)
-		}
-	}
-
-	out := make([]Segment, 0, len(segs))
-	for _, s := range segs {
-		if s.StartTime.Format("20060102") == s.EndTime.Format("20060102") {
-			out = append(out, s)
-			continue
-		}
-
-		totalDur := int(s.EndTime.Sub(s.StartTime).Seconds())
-		if totalDur <= 0 {
-			logWarn("Skip invalid duration segment: %s", s.Path)
-			continue
-		}
-
-		type part struct {
-			off int
-			dur int
-			ps  time.Time
-			pe  time.Time
-		}
-		parts := []part{}
-		cur := s.StartTime
-		offset := 0
-		for cur.Before(s.EndTime) {
-			dayEnd := time.Date(cur.Year(), cur.Month(), cur.Day(), 23, 59, 59, int(time.Second-time.Nanosecond), cur.Location())
-			end := s.EndTime
-			if dayEnd.Before(end) {
-				end = dayEnd
-			}
-			dur := int(end.Sub(cur).Seconds()) + 1
-			if dur <= 0 {
-				break
-			}
-			parts = append(parts, part{off: offset, dur: dur, ps: cur, pe: end})
-			offset += dur
-			cur = dayEnd.Add(time.Second)
-		}
-
-		for i, p := range parts {
-			ext := s.Ext
-			if ext == "" {
-				ext = mergedOutExt
-			}
-			tf, err := os.CreateTemp("", fmt.Sprintf("split_%d_*%s", i, ext))
-			if err != nil {
-				cleanup()
-				return nil, func() {}, err
-			}
-			tmp := tf.Name()
-			_ = tf.Close()
-			temps = append(temps, tmp)
-
-			args := []string{"-y"}
-			if p.off > 0 {
-				args = append(args, "-ss", fmt.Sprintf("%d", p.off))
-			}
-			args = append(args, "-i", s.Path, "-t", fmt.Sprintf("%d", p.dur))
-			args = append(args, "-fflags", "+genpts")
-			args = append(args, "-c", "copy")
-			args = append(args, "-avoid_negative_ts", "make_zero")
-			if strings.EqualFold(ext, ".mp4") {
-				args = append(args, "-movflags", "+faststart")
-				args = append(args, "-video_track_timescale", fmt.Sprintf("%d", mp4VideoTrackTimebase))
-			}
-			args = append(args, tmp)
-			if err := runFFmpeg(args); err != nil {
-				cleanup()
-				return nil, func() {}, fmt.Errorf("FFmpeg split failed: %w", err)
-			}
-			out = append(out, Segment{
-				Path:      tmp,
-				SourceKey: s.SourceKey,
-				StartTime: p.ps,
-				EndTime:   p.pe,
-				Ext:       ext,
-			})
-		}
-	}
-	return out, cleanup, nil
 }
 
 func validateExtConsistency(segs []Segment) error {
